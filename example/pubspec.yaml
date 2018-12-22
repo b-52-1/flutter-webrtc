@@ -13,10 +13,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  webrtc:
+  flutter_webrtc:
     path: ../
-
-  shared_preferences: ^0.4.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://www.dartlang.org/tools/pub/pubspec

@@ -15,6 +15,8 @@ import com.cloudwebrtc.webrtc.utils.ObjectType;
 import java.util.*;
 
 import org.webrtc.AudioTrack;
+import org.webrtc.DefaultVideoDecoderFactory;
+import org.webrtc.DefaultVideoEncoderFactory;
 import org.webrtc.EglBase;
 import org.webrtc.IceCandidate;
 import org.webrtc.Logging;
@@ -26,6 +28,8 @@ import org.webrtc.PeerConnectionFactory;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
 import org.webrtc.VideoTrack;
+import org.webrtc.audio.AudioDeviceModule;
+import org.webrtc.audio.JavaAudioDeviceModule;
 
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodChannel;
@@ -90,16 +94,24 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
 
         PeerConnectionFactory.initialize(
                 PeerConnectionFactory.InitializationOptions.builder(registrar.context())
-                        .setEnableInternalTracer(false)
-                        .setEnableVideoHwAcceleration(true)
+                        .setEnableInternalTracer(true)
                         .createInitializationOptions());
 
-        mFactory = new PeerConnectionFactory(null);
+        final AudioDeviceModule audioDeviceModule = JavaAudioDeviceModule.builder(registrar.context())
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
+                .createAudioDeviceModule();
+
         // Initialize EGL contexts required for HW acceleration.
         EglBase.Context eglContext = EglUtils.getRootEglBaseContext();
-        if (eglContext != null) {
-            mFactory.setVideoHwAccelerationOptions(eglContext, eglContext);
-        }
+
+        mFactory = PeerConnectionFactory.builder()
+                .setOptions(new PeerConnectionFactory.Options())
+                .setVideoEncoderFactory(new DefaultVideoEncoderFactory(eglContext, true, true))
+                .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglContext))
+                .setAudioDeviceModule(audioDeviceModule)
+                .createPeerConnectionFactory();
+
         getUserMediaImpl = new GetUserMediaImpl(this, registrar.context());
     }
 
@@ -129,7 +141,34 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
         } else if (call.method.equals("mediaStreamGetTracks")) {
             String streamId = call.argument("streamId");
             MediaStream stream = getStreamForId(streamId);
-            //TODO: build tracks map.
+            Map<String, Object> resultMap = new HashMap<>();
+            List<Object> audioTracks = new ArrayList<>();
+            List<Object> videoTracks = new ArrayList<>();
+            for (AudioTrack track : stream.audioTracks) {
+                localTracks.put(track.id(), track);
+                Map<String, Object> trackMap = new HashMap<>();
+                trackMap.put("enabled", track.enabled());
+                trackMap.put("id", track.id());
+                trackMap.put("kind", track.kind());
+                trackMap.put("label", track.id());
+                trackMap.put("readyState", "live");
+                trackMap.put("remote", false);
+                audioTracks.add(trackMap);
+            }
+            for (VideoTrack track : stream.videoTracks) {
+                localTracks.put(track.id(), track);
+                Map<String, Object> trackMap = new HashMap<>();
+                trackMap.put("enabled", track.enabled());
+                trackMap.put("id", track.id());
+                trackMap.put("kind", track.kind());
+                trackMap.put("label", track.id());
+                trackMap.put("readyState", "live");
+                trackMap.put("remote", false);
+                videoTracks.add(trackMap);
+            }
+            resultMap.put("audioTracks", audioTracks);
+            resultMap.put("videoTracks", videoTracks);
+            result.success(resultMap);
         } else if (call.method.equals("addStream")) {
             String streamId = call.argument("streamId");
             String peerConnectionId = call.argument("peerConnectionId");
@@ -173,7 +212,15 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
             String streamId = call.argument("streamId");
             mediaStreamRelease(streamId);
             result.success(null);
-        } else if (call.method.equals("trackDispose")) {
+        }else if (call.method.equals("mediaStreamTrackSetEnable")) {
+            String trackId = call.argument("trackId");
+            Boolean enabled = call.argument("enabled");
+            MediaStreamTrack track = getTrackForId(trackId);
+            if(track != null){
+                track.setEnabled(enabled);
+            }
+            result.success(null);
+        }else if (call.method.equals("trackDispose")) {
             String trackId = call.argument("trackId");
             localTracks.remove(trackId);
             result.success(null);
@@ -184,7 +231,7 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
         } else if (call.method.equals("createVideoRenderer")) {
             TextureRegistry.SurfaceTextureEntry entry = textures.createSurfaceTexture();
             SurfaceTexture surfaceTexture = entry.surfaceTexture();
-            FlutterRTCVideoRenderer render = new FlutterRTCVideoRenderer(surfaceTexture, getContext());
+            FlutterRTCVideoRenderer render = new FlutterRTCVideoRenderer(surfaceTexture);
             renders.put(entry.id(), render);
 
             EventChannel eventChannel =
@@ -217,6 +264,15 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
 
             MediaStream stream = getStreamForId(streamId);
             render.setStream(stream);
+            result.success(null);
+        } else if (call.method.equals("mediaStreamTrackSwitchCamera")) {
+            String trackId = call.argument("trackId");
+            mediaStreamTrackSwitchCamera(trackId);
+            result.success(null);
+        } else if (call.method.equals("setVolume")) {
+            String trackId = call.argument("trackId");
+            double volume = call.argument("volume");
+            mediaStreamTrackSetVolume(trackId, volume);
             result.success(null);
         } else {
             result.notImplemented();
@@ -681,6 +737,20 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
         }
     }
 
+    public void mediaStreamTrackSetVolume(final String id, final double volume) {
+        MediaStreamTrack track = localTracks.get(id);
+        if (track != null && track instanceof AudioTrack) {
+            Log.d(TAG, "setVolume(): " + id + "," + volume);
+            try {
+                ((AudioTrack)track).setVolume(volume);
+            } catch (Exception e) {
+                Log.e(TAG, "setVolume(): error", e);
+            }
+        } else {
+            Log.w(TAG, "setVolume(): track not found: " + id);
+        }
+    }
+
     public void mediaStreamTrackRelease(final String streamId, final String _trackId) {
         MediaStream stream = localStreams.get(streamId);
         if (stream == null) {
@@ -1003,4 +1073,5 @@ public class FlutterWebRTCPlugin implements MethodCallHandler {
             pco.dataChannelClose(dataChannelId);
         }
     }
+
 }

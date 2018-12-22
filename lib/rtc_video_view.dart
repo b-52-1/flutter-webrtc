@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:webrtc/media_stream.dart';
-import 'package:webrtc/utils.dart';
+import 'media_stream.dart';
+import 'utils.dart';
 
 enum RTCVideoViewObjectFit {
   RTCVideoViewObjectFitContain,
@@ -19,7 +19,7 @@ class RTCVideoRenderer {
   int _textureId;
   int _rotation = 0;
   double _width = 0.0, _height = 0.0;
-  bool _mirror = false;
+  bool _mirror;
   MediaStream _srcObject;
   RTCVideoViewObjectFit _objectFit =
       RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
@@ -42,6 +42,8 @@ class RTCVideoRenderer {
   double get width => _width;
 
   double get height => _height;
+  
+  int get textureId => _textureId;
 
   set mirror(bool mirror) {
     _mirror = mirror;

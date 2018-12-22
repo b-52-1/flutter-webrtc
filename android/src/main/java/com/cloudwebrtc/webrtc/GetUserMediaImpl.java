@@ -20,6 +20,7 @@ import android.media.projection.MediaProjectionManager;
 import com.cloudwebrtc.webrtc.utils.Callback;
 import com.cloudwebrtc.webrtc.utils.ConstraintsArray;
 import com.cloudwebrtc.webrtc.utils.ConstraintsMap;
+import com.cloudwebrtc.webrtc.utils.EglUtils;
 import com.cloudwebrtc.webrtc.utils.ObjectType;
 import com.cloudwebrtc.webrtc.utils.PermissionUtils;
 
@@ -325,7 +326,8 @@ class GetUserMediaImpl{
             }
         }
 
-        boolean requestScreenCapturer =  videoConstraintsMandatory.hasKey("chromeMediaSource") &&
+        boolean requestScreenCapturer = videoConstraintsMandatory != null &&
+                videoConstraintsMandatory.hasKey("chromeMediaSource") &&
                 videoConstraintsMandatory.getString("chromeMediaSource").equals("desktop");
 
         final ArrayList<String> requestPermissions = new ArrayList<>();
@@ -364,7 +366,7 @@ class GetUserMediaImpl{
                     if (videoCapturer != null) {
 
                         PeerConnectionFactory pcFactory = plugin.mFactory;
-                        VideoSource videoSource = pcFactory.createVideoSource(videoCapturer);
+                        VideoSource videoSource = pcFactory.createVideoSource(true);
 
                         // Fall back to defaults if keys are missing.
                         int width
@@ -425,7 +427,7 @@ class GetUserMediaImpl{
                             }
                         }
 
-                        String streamId = mediaStream.label();
+                        String streamId = mediaStream.getId();
 
                         Log.d(TAG, "MediaStream id: " + streamId);
                         plugin.localStreams.put(streamId, mediaStream);
@@ -579,7 +581,7 @@ class GetUserMediaImpl{
             }
         }
 
-        String streamId = mediaStream.label();
+        String streamId = mediaStream.getId();
 
         Log.d(TAG, "MediaStream id: " + streamId);
         plugin.localStreams.put(streamId, mediaStream);
@@ -635,7 +637,10 @@ class GetUserMediaImpl{
         }
 
         PeerConnectionFactory pcFactory = plugin.mFactory;
-        VideoSource videoSource = pcFactory.createVideoSource(videoCapturer);
+        VideoSource videoSource = pcFactory.createVideoSource(false);
+        String threadName = Thread.currentThread().getName();
+        SurfaceTextureHelper surfaceTextureHelper = SurfaceTextureHelper.create(threadName, EglUtils.getRootEglBaseContext());
+        videoCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
 
         // Fall back to defaults if keys are missing.
         int width

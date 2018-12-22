@@ -3,20 +3,9 @@
 #import "FlutterRTCMediaStream.h"
 #import "FlutterRTCDataChannel.h"
 #import "FlutterRTCVideoRenderer.h"
-#import "ARDVideoDecoderFactory.h"
-#import "ARDVideoEncoderFactory.h"
 
 #import <AVFoundation/AVFoundation.h>
-#import <WebRTC/RTCMediaStream.h>
-#import <WebRTC/RTCPeerConnectionFactory.h>
-#import <WebRTC/RTCPeerConnection.h>
-#import <WebRTC/RTCAudioTrack.h>
-#import <WebRTC/RTCVideoTrack.h>
-#import <WebRTC/RTCConfiguration.h>
-#import <WebRTC/RTCIceCandidate.h>
-#import <WebRTC/RTCSessionDescription.h>
-#import <WebRTC/RTCIceServer.h>
-#import <WebRTC/RTCAVFoundationVideoSource.h>
+#import <WebRTC/WebRTC.h>
 
 
 
@@ -59,8 +48,8 @@
         self.viewController = viewController;
     }
     
-    ARDVideoDecoderFactory *decoderFactory = [[ARDVideoDecoderFactory alloc] init];
-    ARDVideoEncoderFactory *encoderFactory = [[ARDVideoEncoderFactory alloc] init];
+    RTCDefaultVideoDecoderFactory *decoderFactory = [[RTCDefaultVideoDecoderFactory alloc] init];
+    RTCDefaultVideoEncoderFactory *encoderFactory = [[RTCDefaultVideoEncoderFactory alloc] init];
     
     _peerConnectionFactory = [[RTCPeerConnectionFactory alloc]
                               initWithEncoderFactory:encoderFactory
@@ -269,15 +258,24 @@
                 [self.localTracks removeObjectForKey:track.trackId];
                 RTCVideoTrack *videoTrack = (RTCVideoTrack *)track;
                 RTCVideoSource *source = videoTrack.source;
-                if ([source isKindOfClass:[RTCAVFoundationVideoSource class]]) {
-                    RTCAVFoundationVideoSource *avSource = (RTCAVFoundationVideoSource *)source;
-                    [avSource Stop];
+                if(source){
+                    [self.videoCapturer stopCapture];
+                    self.videoCapturer = nil;
                 }
             }
             for (RTCAudioTrack *track in stream.audioTracks) {
                 [self.localTracks removeObjectForKey:track.trackId];
             }
             [self.localStreams removeObjectForKey:streamId];
+        }
+        result(nil);
+    }else if([@"mediaStreamTrackSetEnable" isEqualToString:call.method]){
+        NSDictionary* argsMap = call.arguments;
+        NSString* trackId = argsMap[@"trackId"];
+        BOOL enabled = argsMap[@"enabled"];
+        RTCMediaStreamTrack *track = self.localTracks[trackId];
+        if(track != nil){
+            track.isEnabled = enabled;
         }
         result(nil);
     }else if([@"trackDispose" isEqualToString:call.method]){
@@ -336,6 +334,32 @@
             [self setStreamId:streamId view:render];
         }
         result(nil);
+    }else if ([@"mediaStreamTrackSwitchCamera" isEqualToString:call.method]){
+        NSDictionary* argsMap = call.arguments;
+        NSString* trackId = argsMap[@"trackId"];
+        RTCMediaStreamTrack *track = self.localTracks[trackId];
+        if (track != nil && [track isKindOfClass:[RTCVideoTrack class]]) {
+            RTCVideoTrack *videoTrack = (RTCVideoTrack *)track;
+            [self mediaStreamTrackSwitchCamera:videoTrack];
+        } else {
+            if (track == nil) {
+                NSLog(@"Track is nil");
+            } else {
+                NSLog([@"Track is class of " stringByAppendingString:[[track class] description]]);
+            }
+        }
+        result(nil);
+    }else if ([@"setVolume" isEqualToString:call.method]){
+        NSDictionary* argsMap = call.arguments;
+        NSString* trackId = argsMap[@"trackId"];
+        NSNumber* volume = argsMap[@"volume"];
+        RTCMediaStreamTrack *track = self.localTracks[trackId];
+        if (track != nil && [track isKindOfClass:[RTCAudioTrack class]]) {
+            RTCAudioTrack *audioTrack = (RTCAudioTrack *)track;
+            RTCAudioSource *audioSource = audioTrack.source;
+            audioSource.volume = [volume doubleValue];
+        }
+        result(nil);
     }else{
         result(FlutterMethodNotImplemented);
     }
@@ -367,6 +391,7 @@
         
         for (RTCMediaStreamTrack *track in stream.audioTracks) {
             NSString *trackId = track.trackId;
+            [self.localTracks setObject:track forKey:trackId];
             [audioTracks addObject:@{
                                      @"enabled": @(track.isEnabled),
                                      @"id": trackId,
@@ -379,6 +404,7 @@
         
         for (RTCMediaStreamTrack *track in stream.videoTracks) {
             NSString *trackId = track.trackId;
+            [self.localTracks setObject:track forKey:trackId];
             [videoTracks addObject:@{
                                      @"enabled": @(track.isEnabled),
                                      @"id": trackId,

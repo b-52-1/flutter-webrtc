@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:webrtc/utils.dart';
+import 'utils.dart';
 
 class MediaStreamTrack {
   MethodChannel _channel = WebRTC.methodChannel();
@@ -11,7 +11,7 @@ class MediaStreamTrack {
   MediaStreamTrack(this._trackId, this._label, this._kind, this._enabled);
 
   set enabled(bool enabled) {
-    _channel.invokeMethod('mediaStreamTrackEnabled',
+    _channel.invokeMethod('mediaStreamTrackSetEnable',
         <String, dynamic>{'trackId': _trackId, 'enabled': enabled});
     _enabled = enabled;
   }
@@ -20,6 +20,20 @@ class MediaStreamTrack {
   String get label => _label;
   String get kind => _kind;
   String get id => _trackId;
+
+  void switchCamera() async {
+    await _channel.invokeMethod(
+      'mediaStreamTrackSwitchCamera',
+      <String, dynamic>{'trackId': _trackId},
+    );
+  }
+
+  void setVolume(double volume) async {
+    await _channel.invokeMethod(
+      'setVolume',
+      <String, dynamic>{'trackId': _trackId, 'volume': volume},
+    );
+  }
 
   void dispose() async {
     await _channel.invokeMethod(

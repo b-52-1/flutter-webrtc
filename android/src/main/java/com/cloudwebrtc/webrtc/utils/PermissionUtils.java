@@ -9,7 +9,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ResultReceiver;
-import android.support.v4.content.ContextCompat;
 
 import com.cloudwebrtc.webrtc.FlutterWebRTCPlugin;
 
@@ -36,41 +35,6 @@ public class PermissionUtils {
      */
     private static int requestCode;
 
-
-    private static void maybeRequestPermissionsOnHostResume(
-            final FlutterWebRTCPlugin plugin,
-            final String[] permissions,
-            int[] grantResults,
-            final ResultReceiver resultReceiver,
-            int requestCode) {
-
-        /*
-        if (!(context instanceof ReactContext)) {
-            // I do not know how to wait for an Activity here.
-            send(resultReceiver, requestCode, permissions, grantResults);
-            return;
-        }
-
-        final Context reactContext = (Context) context;
-        reactContext.addLifecycleEventListener(
-            new LifecycleEventListener() {
-                @Override
-                public void onHostDestroy() {
-                }
-
-                @Override
-                public void onHostPause() {
-                }
-
-                @Override
-                public void onHostResume() {
-                    reactContext.removeLifecycleEventListener(this);
-                    requestPermissions(context, permissions, resultReceiver);
-                }
-            });
-        */
-    }
-
     private static void requestPermissions(
             FlutterWebRTCPlugin plugin,
             String[] permissions,
@@ -82,10 +46,12 @@ public class PermissionUtils {
         boolean permissionsGranted = true;
 
         for (int i = 0; i < size; ++i) {
-            int grantResult
-                = ContextCompat.checkSelfPermission(
-                    plugin.getContext(),
-                    permissions[i]);
+            int grantResult;
+            // No need to ask for permission on pre-Marshmallow
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+                grantResult = PackageManager.PERMISSION_GRANTED;
+            else
+                grantResult = plugin.getContext().checkSelfPermission(permissions[i]);
 
             grantResults[i] = grantResult;
             if (grantResult != PackageManager.PERMISSION_GRANTED) {
@@ -115,19 +81,9 @@ public class PermissionUtils {
 
         Activity activity = plugin.getActivity();
 
-        // If a ReactContext does not have a current Activity, then wait for
-        // it to get a current Activity; otherwise, the user will not be asked
-        // about the denied permissions and getUserMedia will fail.
         if (activity == null) {
-            maybeRequestPermissionsOnHostResume(
-                plugin,
-                permissions,
-                grantResults,
-                resultReceiver,
-                requestCode);
             return;
         }
-
 
         Bundle args = new Bundle();
         args.putInt(REQUEST_CODE, requestCode);
@@ -146,13 +102,8 @@ public class PermissionUtils {
         try {
             transaction.commit();
         } catch (IllegalStateException ise) {
-            // The Activity has likely already saved its state.
-            maybeRequestPermissionsOnHostResume(
-                plugin,
-                permissions,
-                grantResults,
-                resultReceiver,
-                requestCode);
+            // Context is a Plugin, just send result back.
+            send(resultReceiver, requestCode, permissions, grantResults);
         }
     }
 
@@ -217,7 +168,12 @@ public class PermissionUtils {
 
             for (int i = 0; i < size; ++i) {
                 String permission = permissions[i];
-                int grantResult = activity.checkSelfPermission(permission);
+                int grantResult;
+                // No need to ask for permission on pre-Marshmallow
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+                    grantResult = PackageManager.PERMISSION_GRANTED;
+                else
+                    grantResult = activity.checkSelfPermission(permission);
 
                 grantResults[i] = grantResult;
                 if (grantResult != PackageManager.PERMISSION_GRANTED) {
